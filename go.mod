@@ -2,7 +2,7 @@ module github.com/taekion-org/sawtooth-hcs-consensus
 
 go 1.16
 
-replace github.com/hyperledger/sawtooth-sdk-go => ../sawtooth-sdk-go
+replace github.com/hyperledger/sawtooth-sdk-go v0.1.4 => github.com/taekion-org/sawtooth-sdk-go v0.1.6
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.2.1 // indirect
@@ -14,7 +14,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/joho/godotenv v1.4.0
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/taekion-org/sawtooth-client-sdk-go v0.1.1 // indirect
+	github.com/taekion-org/sawtooth-client-sdk-go v0.1.1
 	golang.org/x/crypto v0.0.0-20220919173607-35f4265a4bc0 // indirect
 	golang.org/x/net v0.0.0-20220919232410-f2f64ebce3c1 // indirect
 	golang.org/x/sys v0.0.0-20220919091848-fb04ddd9f9c8 // indirect
