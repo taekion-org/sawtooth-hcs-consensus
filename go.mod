@@ -14,6 +14,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/joho/godotenv v1.4.0
 	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/taekion-org/sawtooth-client-sdk-go v0.1.1 // indirect
 	golang.org/x/crypto v0.0.0-20220919173607-35f4265a4bc0 // indirect
 	golang.org/x/net v0.0.0-20220919232410-f2f64ebce3c1 // indirect
 	golang.org/x/sys v0.0.0-20220919091848-fb04ddd9f9c8 // indirect
