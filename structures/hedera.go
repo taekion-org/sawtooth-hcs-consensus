@@ -1,9 +1,5 @@
 package structures
 
-import (
-	"github.com/hyperledger/sawtooth-sdk-go/consensus"
-)
-
 type HCSEngineTopicMessageType string
 
 const BLOCK_INTENT HCSEngineTopicMessageType = "BLOCK_INTENT"
@@ -12,7 +8,7 @@ const TIME_TICK HCSEngineTopicMessageType = "TIME_TICK"
 
 type HCSEngineTopicMessage struct {
 	Type          HCSEngineTopicMessageType `json:"type,omitempty"`
-	PeerId        consensus.PeerId          `json:"peer_id,omitempty"`
+	PeerId        string                    `json:"peer_id,omitempty"`
 	BlockIntent   HCSEngineBlockIntent      `json:"block_intent,omitempty"`
 	BlockProposal HCSEngineBlockProposal    `json:"block_proposal,omitempty"`
 }

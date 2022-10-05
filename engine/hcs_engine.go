@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/hashgraph/hedera-sdk-go/v2"
 	"github.com/hyperledger/sawtooth-sdk-go/consensus"
 	"github.com/hyperledger/sawtooth-sdk-go/logging"
@@ -19,7 +20,6 @@ type HCSEngineImpl struct {
 
 	service       consensus.ConsensusService
 	startupState  consensus.StartupState
-	chainHead     consensus.Block
 	localPeerInfo consensus.PeerInfo
 	startTime     time.Time
 	updateChan    chan consensus.ConsensusUpdate
@@ -47,7 +47,6 @@ func (self *HCSEngineImpl) Version() string {
 func (self *HCSEngineImpl) Start(startupState consensus.StartupState, service consensus.ConsensusService, updateChan chan consensus.ConsensusUpdate) error {
 	self.startupState = startupState
 	self.service = service
-	self.chainHead = startupState.ChainHead()
 	self.localPeerInfo = startupState.LocalPeerInfo()
 	self.startTime = time.Now()
 	self.updateChan = updateChan
@@ -90,7 +89,7 @@ func (self *HCSEngineImpl) mainLoop() {
 		case <-ticker.C:
 			msg := structures.HCSEngineTopicMessage{
 				Type:   structures.TIME_TICK,
-				PeerId: self.localPeerInfo.PeerId(),
+				PeerId: self.localPeerInfo.PeerId().String(),
 			}
 			go self.sendTopicMessage(msg)
 		}
@@ -122,14 +121,16 @@ func (self *HCSEngineImpl) sendTopicMessage(message structures.HCSEngineTopicMes
 
 	//Get the transaction status
 	transactionStatus := receipt.Status
-
-	logger.Debugf("Submitted %s, result %s", message.Type, transactionStatus.String())
+	if message.Type != structures.TIME_TICK {
+		logger.Debugf("Submitted %s, result %s", message.Type, transactionStatus.String())
+	}
 
 	return
 }
 
 func (self *HCSEngineImpl) tickLoop() {
 	for {
+		logger.Debug("tickLoop()")
 		self.stateTracker.Lock()
 		self.stateTracker.GetTimeCondition().Wait()
 		currentTime := self.stateTracker.GetLatestTime()
@@ -141,12 +142,20 @@ func (self *HCSEngineImpl) tickLoop() {
 
 		maxIntent, err := self.stateTracker.GetMaxIntentState()
 		if err != nil {
-			panic(err)
+			fmt.Printf("Could not get max intent: %v", err)
 		}
 		maxProposal, err := self.stateTracker.GetMaxProposalState()
 		if err != nil {
 			panic(err)
 		}
+
+		if maxIntent != nil {
+			logger.Debugf("maxIntent: %d", maxIntent.Intent.BlockNumber)
+		}
+		logger.Debugf("maxProposal: %d", maxProposal.Proposal.BlockNumber)
+		logger.Debugf("currentIntentBlock: %d", self.currentIntentBlockNum)
+		logger.Debugf("currentProposalBlock: %d", self.currentProposalBlockNum)
+		logger.Debugf("chainHeadBlock: %d", chainHead.BlockNum())
 
 		// TODO: What do if consensus doesn't match chain head?
 		// If HCS matches chain head, do an intent.
@@ -155,11 +164,12 @@ func (self *HCSEngineImpl) tickLoop() {
 			chainHead.BlockNum() >= self.currentIntentBlockNum {
 
 			intentBlockNum := maxProposal.Proposal.BlockNumber + 1
+			logger.Debugf("Submitting intent: %d", intentBlockNum)
 
 			// Prepare the topic message
 			msg := structures.HCSEngineTopicMessage{
 				Type:   structures.BLOCK_INTENT,
-				PeerId: self.localPeerInfo.PeerId(),
+				PeerId: self.localPeerInfo.PeerId().String(),
 				BlockIntent: structures.HCSEngineBlockIntent{
 					BlockNumber:   intentBlockNum,
 					PrevBlockHash: maxProposal.Proposal.BlockHash,
@@ -170,31 +180,35 @@ func (self *HCSEngineImpl) tickLoop() {
 			go self.sendTopicMessage(msg)
 			// If we have intent pending and time has elapsed propose a block.
 		} else if chainHead.BlockNum() < self.currentIntentBlockNum &&
-			maxIntent.Intent.BlockNumber == self.currentIntentBlockNum &&
+			maxIntent != nil && maxIntent.Intent.BlockNumber == self.currentIntentBlockNum &&
 			currentTime.After(maxIntent.Message.ConsensusTimestamp.Add(BLOCK_TIME_SECONDS*time.Second)) {
 
 			// Summarize block
 			_, err := self.service.SummarizeBlock()
 			if err != nil && consensus.IsBlockNotReadyError(err) {
 				logger.Debug("Block not ready to summarize...")
-				return
+				self.stateTracker.Unlock()
+				continue
 			}
 
 			// Finalize Block
 			blockId, err := self.service.FinalizeBlock([]byte{})
 			if err != nil && consensus.IsBlockNotReadyError(err) {
 				logger.Debug("Block not ready to finalize...")
-				return
+				self.stateTracker.Unlock()
+				continue
 			}
 			logger.Debugf("Block finalized successfully: %s", blockId.String())
+
+			logger.Debugf("Submitting proposal: %d", self.currentIntentBlockNum)
 
 			// Prepare the topic message
 			msg := structures.HCSEngineTopicMessage{
 				Type:   structures.BLOCK_PROPOSAL,
-				PeerId: self.localPeerInfo.PeerId(),
+				PeerId: self.localPeerInfo.PeerId().String(),
 				BlockProposal: structures.HCSEngineBlockProposal{
 					PrevStateProof: "",
-					PrevBlockHash:  self.chainHead.BlockId().String(),
+					PrevBlockHash:  chainHead.BlockId().String(),
 					BlockHash:      blockId.String(),
 					BlockNumber:    self.currentIntentBlockNum,
 				},
@@ -202,22 +216,13 @@ func (self *HCSEngineImpl) tickLoop() {
 			self.currentProposalBlockNum = self.currentIntentBlockNum
 			go self.sendTopicMessage(msg)
 		}
+		// TODO: If chain moves ahead and we don't have any block, cancel current block.
 
 		self.stateTracker.Unlock()
 	}
-
-	// If consensus is past chain head, wait
-
-	// If consensus is at chain head, signal intent.
-
-	// If we are intending on next block and time passes, send proposal
-	// Wait for running proposal
-
 }
 
-func (self *HCSEngineImpl) handleBlockNew(block consensus.Block) {
-	logger.Debugf("handleBlockNew: %s", block.BlockId())
-
+func (self *HCSEngineImpl) waitForProposal(block consensus.Block) *HCSBlockProposalState {
 	var proposal *HCSBlockProposalState
 	var err error
 
@@ -234,48 +239,31 @@ func (self *HCSEngineImpl) handleBlockNew(block consensus.Block) {
 		}
 	}
 	self.stateTracker.Unlock()
-	logger.Debug("Have a proposal for block %d", block.BlockNum())
+
+	return proposal
+}
+
+func (self *HCSEngineImpl) handleBlockNew(block consensus.Block) {
+	logger.Debugf("handleBlockNew: %s", block.BlockId())
+
+	proposal := self.waitForProposal(block)
+	logger.Debugf("Have a proposal for block %d", block.BlockNum())
 
 	blockId := consensus.NewBlockIdFromString(proposal.Proposal.BlockHash)
 	if block.BlockId() == blockId {
-		logger.Debug("Have consensus, checking block")
+		logger.Debugf("Have consensus, checking block %d", block.BlockNum())
 		self.service.CheckBlocks([]consensus.BlockId{blockId})
 	} else {
-		logger.Debug("No consensus, failing block")
+		logger.Debugf("No consensus, failing block %d", block.BlockNum())
 		self.service.FailBlock(blockId)
 	}
 }
 
 func (self *HCSEngineImpl) handleBlockValid(blockId consensus.BlockId) {
 	logger.Debugf("handleBlockValid: %s", blockId)
-	/*
-		go func() {
-			for {
-				if _, ok := self.firstBlockProposal[self.pendingBlockNum]; !ok {
-					time.Sleep(500 * time.Millisecond)
-				} else {
-					break
-				}
-			}
-
-			logger.Debug("Have a valid block...")
-			self.service.CommitBlock(blockId)
-		}()
-	*/
+	self.service.CommitBlock(blockId)
 }
 
 func (self *HCSEngineImpl) handleBlockCommit(blockId consensus.BlockId) {
 	logger.Debugf("handleBlockCommit: %s", blockId)
-	/*
-		blocks, err := self.service.GetBlocks([]consensus.BlockId{blockId})
-		if err != nil {
-			panic(err)
-		}
-		self.chainHead = blocks[blockId]
-	*/
 }
-
-//blockId := consensus.NewBlockIdFromString()
-//logger.Info("checking blockid ", blockId)
-//blocks := []consensus.BlockId{blockId}
-//self.service.CheckBlocks(blocks)

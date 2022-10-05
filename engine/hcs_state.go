@@ -88,7 +88,7 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 	debugMsg := func(extra string) {
 		msg := fmt.Sprintf("HCS - SEQ: %d TS: %s TYPE: %s", message.SequenceNumber, message.ConsensusTimestamp, decodedMessage.Type)
 
-		peer := decodedMessage.PeerId.String()
+		peer := decodedMessage.PeerId
 		if peer == "" {
 			peer = "NA"
 		}
