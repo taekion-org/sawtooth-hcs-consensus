@@ -102,8 +102,6 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 	switch decodedMessage.Type {
 	case structures.TIME_TICK:
 		debugMsg("")
-		self.latestTime = message.ConsensusTimestamp
-		self.GetTimeCondition().Broadcast()
 
 	case structures.BLOCK_INTENT:
 		intent := decodedMessage.BlockIntent
@@ -170,6 +168,10 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 			}
 		}
 	}
+
+	// Update the time regardless of the message type.
+	self.latestTime = message.ConsensusTimestamp
+	self.GetTimeCondition().Broadcast()
 }
 
 func (self *HCSStateTracker) GetTimeCondition() *sync.Cond {
