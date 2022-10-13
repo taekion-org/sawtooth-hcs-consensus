@@ -180,7 +180,9 @@ func (self *HCSEngineImpl) tickLoop() {
 			go self.sendTopicMessage(msg)
 			// If we have intent pending and time has elapsed propose a block.
 		} else if chainHead.BlockNum() < self.currentIntentBlockNum &&
-			maxIntent != nil && maxIntent.Intent.BlockNumber == self.currentIntentBlockNum &&
+			maxIntent != nil &&
+			maxIntent.Intent.BlockNumber == self.currentIntentBlockNum &&
+			self.currentIntentBlockNum != self.currentProposalBlockNum &&
 			currentTime.After(maxIntent.Message.ConsensusTimestamp.Add(BLOCK_TIME_SECONDS*time.Second)) {
 
 			// Summarize block
@@ -247,20 +249,21 @@ func (self *HCSEngineImpl) handleBlockNew(block consensus.Block) {
 	logger.Debugf("handleBlockNew: %s", block.BlockId())
 
 	proposal := self.waitForProposal(block)
-	logger.Debugf("Have a proposal for block %d", block.BlockNum())
+	proposalBlockId := consensus.NewBlockIdFromString(proposal.Proposal.BlockHash)
+	logger.Debugf("Have a proposal for block %d (%s) P(%s)", block.BlockNum(), block.BlockId().String(), proposalBlockId)
 
-	blockId := consensus.NewBlockIdFromString(proposal.Proposal.BlockHash)
-	if block.BlockId() == blockId {
-		logger.Debugf("Have consensus, checking block %d", block.BlockNum())
-		self.service.CheckBlocks([]consensus.BlockId{blockId})
+	if block.BlockId() == proposalBlockId {
+		logger.Debugf("Have consensus, checking block %d (%s)", block.BlockNum(), block.BlockId().String())
+		self.service.CheckBlocks([]consensus.BlockId{block.BlockId()})
 	} else {
-		logger.Debugf("No consensus, failing block %d", block.BlockNum())
-		self.service.FailBlock(blockId)
+		logger.Debugf("No consensus, failing block %d (%s)", block.BlockNum(), block.BlockId().String())
+		self.service.FailBlock(block.BlockId())
 	}
 }
 
 func (self *HCSEngineImpl) handleBlockValid(blockId consensus.BlockId) {
 	logger.Debugf("handleBlockValid: %s", blockId)
+	logger.Debugf("Committing: %s", blockId)
 	self.service.CommitBlock(blockId)
 }
 

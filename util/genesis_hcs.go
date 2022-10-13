@@ -54,11 +54,8 @@ func main() {
 		panic("Not the genesis block...")
 	}
 
-	fmt.Println("blockid", genesisBlock.HeaderSignature)
-
 	batchHashes := make([]string, len(genesisBlock.Batches))
 	for i, batch := range genesisBlock.Batches {
-		fmt.Println("batch", batch.HeaderSignature)
 		batchHashes[i] = batch.HeaderSignature
 	}
 
