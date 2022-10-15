@@ -56,7 +56,10 @@ func NewHCSStateTracker(topic hedera.TopicID, client *hedera.Client) *HCSStateTr
 func (self *HCSStateTracker) Start() error {
 	_, err := hedera.NewTopicMessageQuery().
 		SetTopicID(self.topic).
-		Subscribe(self.client, self.handleTopicMessage)
+		Subscribe(self.client,
+			func(message hedera.TopicMessage) {
+				self.handleTopicMessage(message)
+			})
 	if err != nil {
 		return err
 	}
@@ -99,6 +102,10 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 		logger.Debug(msg)
 	}
 
+	// Update the time regardless of the message type.
+	self.latestTime = message.ConsensusTimestamp
+	self.GetTimeCondition().Broadcast()
+
 	switch decodedMessage.Type {
 	case structures.TIME_TICK:
 		debugMsg("")
@@ -114,19 +121,18 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 		// If the intent timestamp is after the last (accepted) proposal time and has incremented
 		//the block number by 1, it is valid.
 		if message.ConsensusTimestamp.After(lastProposalTime) && intent.BlockNumber == (lastProposalBlockNumber+1) {
-			// If we already have an intent for this block number, we do not track this intent, return.
-			if self.HasIntentState(intent.BlockNumber) {
-				return
-			} else { // Otherwise, set up the states
+			// If we do not already have an intent for this block number, record it.
+			if !self.HasIntentState(intent.BlockNumber) {
 				self.intentState[intent.BlockNumber] = &HCSBlockIntentState{
 					Message: &message,
 					Intent:  &intent,
 				}
 				self.maxIntentBlockNum++
-			}
 
-			// Signal the condition variable
-			self.GetIntentCondition(intent.BlockNumber).Signal()
+				// Signal the condition variable
+				self.GetIntentCondition(intent.BlockNumber).Signal()
+				return
+			}
 		}
 	case structures.BLOCK_PROPOSAL:
 		proposal := decodedMessage.BlockProposal
@@ -140,9 +146,9 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 				Proposal: &proposal,
 			}
 			self.maxProposalBlockNum = 0
+
 			// Signal the condition variable
 			self.GetProposalCondition(proposal.BlockNumber).Signal()
-
 			return
 		}
 
@@ -154,24 +160,20 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 		// If the proposal timestamp is after the last (accepted) intent time + the block time
 		// and is for the same block number, it is valid.
 		if (message.ConsensusTimestamp.After(lastIntentTime.Add(BLOCK_TIME_SECONDS * time.Second))) && (proposal.BlockNumber == lastIntentBlockNumber) {
-			// If we already have a proposal for this block number, we do not track this proposal, return.
-			if self.HasProposalState(proposal.BlockNumber) {
-				return
-			} else { // Otherwise, set up the state
+			// If we do not already have a proposal for this block number, record it.
+			if !self.HasProposalState(proposal.BlockNumber) {
 				self.proposalState[proposal.BlockNumber] = &HCSBlockProposalState{
 					Message:  &message,
 					Proposal: &proposal,
 				}
 				self.maxProposalBlockNum++
+
 				// Signal the condition variable
 				self.GetProposalCondition(proposal.BlockNumber).Signal()
+				return
 			}
 		}
 	}
-
-	// Update the time regardless of the message type.
-	self.latestTime = message.ConsensusTimestamp
-	self.GetTimeCondition().Broadcast()
 }
 
 func (self *HCSStateTracker) GetTimeCondition() *sync.Cond {
