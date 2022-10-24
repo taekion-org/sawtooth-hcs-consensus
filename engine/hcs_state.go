@@ -20,8 +20,9 @@ type HCSBlockProposalState struct {
 }
 
 type HCSStateTracker struct {
-	topic  hedera.TopicID
-	client *hedera.Client
+	topic     hedera.TopicID
+	blockTime time.Duration
+	client    *hedera.Client
 
 	intentState   map[uint64]*HCSBlockIntentState
 	proposalState map[uint64]*HCSBlockProposalState
@@ -37,9 +38,10 @@ type HCSStateTracker struct {
 	proposalConditions map[uint64]*sync.Cond
 }
 
-func NewHCSStateTracker(topic hedera.TopicID, client *hedera.Client) *HCSStateTracker {
+func NewHCSStateTracker(topic hedera.TopicID, blockTime time.Duration, client *hedera.Client) *HCSStateTracker {
 	return &HCSStateTracker{
 		topic:               topic,
+		blockTime:           blockTime,
 		client:              client,
 		intentState:         make(map[uint64]*HCSBlockIntentState),
 		proposalState:       make(map[uint64]*HCSBlockProposalState),
@@ -150,6 +152,8 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 			// Signal the condition variable
 			self.GetProposalCondition(proposal.BlockNumber).Signal()
 			return
+		} else if proposal.BlockNumber == 0 {
+			return
 		}
 
 		// General case for ongoing consensus
@@ -159,7 +163,7 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 
 		// If the proposal timestamp is after the last (accepted) intent time + the block time
 		// and is for the same block number, it is valid.
-		if (message.ConsensusTimestamp.After(lastIntentTime.Add(BLOCK_TIME_SECONDS * time.Second))) && (proposal.BlockNumber == lastIntentBlockNumber) {
+		if (message.ConsensusTimestamp.After(lastIntentTime.Add(self.blockTime * time.Second))) && (proposal.BlockNumber == lastIntentBlockNumber) {
 			// If we do not already have a proposal for this block number, record it.
 			if !self.HasProposalState(proposal.BlockNumber) {
 				self.proposalState[proposal.BlockNumber] = &HCSBlockProposalState{

@@ -15,19 +15,15 @@ func GetClient() *hedera.Client {
 	}
 
 	//Grab your testnet account ID and private key from the .env file
-	myAccountId, err := hedera.AccountIDFromString(os.Getenv("MY_ACCOUNT_ID"))
+	myAccountId, err := hedera.AccountIDFromString(os.Getenv("ACCOUNT_ID"))
 	if err != nil {
 		panic(err)
 	}
 
-	myPrivateKey, err := hedera.PrivateKeyFromString(os.Getenv("MY_PRIVATE_KEY"))
+	myPrivateKey, err := hedera.PrivateKeyFromString(os.Getenv("ACCOUNT_PRIVATE_KEY"))
 	if err != nil {
 		panic(err)
 	}
-
-	//Print your testnet account ID and private key to the console to make sure there was no error
-	fmt.Printf("The account ID is = %v\n", myAccountId)
-	fmt.Printf("The private key is = %v\n", myPrivateKey)
 
 	//Create your testnet client
 	client := hedera.ClientForTestnet()

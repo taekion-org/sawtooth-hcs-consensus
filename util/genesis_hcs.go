@@ -1,20 +1,23 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/hashgraph/hedera-sdk-go/v2"
-	"github.com/taekion-org/sawtooth-client-sdk-go/transport/rest"
-	"github.com/taekion-org/sawtooth-hcs-consensus/structures"
-	"net/url"
 	"os"
 )
 
 func main() {
 	client := GetClient()
 
-	//Create a new topic
+	// Generate a new keypair for the validators to use to publish messages.
+	submitPrivateKey, err := hedera.PrivateKeyGenerateEd25519()
+	if err != nil {
+		panic(err)
+	}
+	submitPublicKey := submitPrivateKey.PublicKey()
+
 	transactionResponse, err := hedera.NewTopicCreateTransaction().
+		SetSubmitKey(submitPublicKey).
 		Execute(client)
 
 	if err != nil {
@@ -22,73 +25,42 @@ func main() {
 		return
 	}
 
-	//Get the topic create transaction receipt
-	transactionReceipt, err := transactionResponse.GetReceipt(client)
-
+	receipt, err := transactionResponse.GetReceipt(client)
 	if err != nil {
 		println(err.Error(), ": error getting topic create receipt")
 		return
 	}
+	topicID := *receipt.TopicID
 
-	//Get the topic ID from the transaction receipt
-	topicID := *transactionReceipt.TopicID
-
-	//Log the topic ID to the console
-	fmt.Printf("topicID: %v\n", topicID)
-
-	url, err := url.Parse(os.Args[1])
+	newAccountPrivateKey, err := hedera.PrivateKeyGenerateEd25519()
 	if err != nil {
 		panic(err)
 	}
+	newAccountPublicKey := newAccountPrivateKey.PublicKey()
 
-	transport, err := rest.NewSawtoothClientTransportRest(url)
-	if err != nil {
-		panic(err)
-	}
-
-	iter := transport.GetBlockIterator(1, false)
-	iter.Next()
-
-	genesisBlock, err := iter.Current()
-	if genesisBlock.Header.BlockNum != "0" {
-		panic("Not the genesis block...")
-	}
-
-	batchHashes := make([]string, len(genesisBlock.Batches))
-	for i, batch := range genesisBlock.Batches {
-		batchHashes[i] = batch.HeaderSignature
-	}
-
-	message := structures.HCSEngineTopicMessage{
-		Type:   structures.BLOCK_PROPOSAL,
-		PeerId: "",
-		BlockProposal: structures.HCSEngineBlockProposal{
-			PrevStateProof: "",
-			PrevBlockHash:  "",
-			BlockHash:      genesisBlock.HeaderSignature,
-			BlockNumber:    0,
-			BatchHashes:    batchHashes,
-		},
-	}
-
-	msgBytes, err := json.Marshal(message)
-	if err != nil {
-		panic(err)
-	}
-
-	submitMessage, err := hedera.NewTopicMessageSubmitTransaction().
-		SetMessage(msgBytes).
-		SetTopicID(topicID).
+	newAccount, err := hedera.NewAccountCreateTransaction().
+		SetKey(newAccountPublicKey).
+		SetInitialBalance(hedera.HbarFrom(100, hedera.HbarUnits.Hbar)).
 		Execute(client)
 
+	receipt, err = newAccount.GetReceipt(client)
 	if err != nil {
 		panic(err)
 	}
+	newAccountId := *receipt.AccountID
 
-	//Get the receipt of the transaction
-	receipt, err := submitMessage.GetReceipt(client)
+	fmt.Printf("topicID: %v\n", topicID)
+	fmt.Printf("submitPrivateKey: %v\n", submitPrivateKey.String())
+	fmt.Printf("accountID: %v\n", newAccountId)
+	fmt.Printf("accountPrivateKey: %v\n", newAccountPrivateKey.String())
 
-	//Get the transaction status
-	transactionStatus := receipt.Status
-	fmt.Println("Genesis transaction status " + transactionStatus.String())
+	f, err := os.OpenFile("engine.env", os.O_WRONLY|os.O_CREATE, 0755)
+	if err != nil {
+		panic(err)
+	}
+	f.WriteString(fmt.Sprintf("ACCOUNT_ID=%v\n", newAccountId))
+	f.WriteString(fmt.Sprintf("ACCOUNT_PRIVATE_KEY=%v\n", newAccountPrivateKey.String()))
+	f.WriteString(fmt.Sprintf("SUBMIT_PRIVATE_KEY=%v\n", submitPrivateKey.String()))
+	f.WriteString("\n")
+	f.Close()
 }

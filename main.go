@@ -15,7 +15,6 @@ import (
 type Opts struct {
 	Verbose []bool `short:"v" long:"verbose" description:"Increase verbosity"`
 	Connect string `short:"C" long:"connect" description:"Validator consensus endpoint to connect to" default:"tcp://localhost:5050"`
-	TopicID string `short:"T" long:"topic" description:"HCS topic ID" required:"true"`
 }
 
 func main() {
@@ -52,33 +51,32 @@ func main() {
 
 	// Set up Hedera Connection
 	//Loads the .env file and throws an error if it cannot load the variables from that file correctly
-	err = godotenv.Load(".env")
+	err = godotenv.Load("engine.env")
 	if err != nil {
 		panic(fmt.Errorf("Unable to load environment variables from .env file. Error:\n%v\n", err))
 	}
 
 	//Grab your testnet account ID and private key from the .env file
-	myAccountId, err := hedera.AccountIDFromString(os.Getenv("MY_ACCOUNT_ID"))
+	accountId, err := hedera.AccountIDFromString(os.Getenv("ACCOUNT_ID"))
 	if err != nil {
 		panic(err)
 	}
 
-	myPrivateKey, err := hedera.PrivateKeyFromString(os.Getenv("MY_PRIVATE_KEY"))
+	accountPrivateKey, err := hedera.PrivateKeyFromString(os.Getenv("ACCOUNT_PRIVATE_KEY"))
+	if err != nil {
+		panic(err)
+	}
+
+	submitPrivateKey, err := hedera.PrivateKeyFromString(os.Getenv("SUBMIT_PRIVATE_KEY"))
 	if err != nil {
 		panic(err)
 	}
 
 	//Create your testnet client
 	client := hedera.ClientForTestnet()
-	client.SetOperator(myAccountId, myPrivateKey)
+	client.SetOperator(accountId, accountPrivateKey)
 
-	topicID, err := hedera.TopicIDFromString(opts.TopicID)
-	if err != nil {
-		panic(err)
-	}
-	logger.Infof("Using HCS topic ID %v", topicID)
-
-	impl := engine.NewHCSEngineImpl(topicID, client)
+	impl := engine.NewHCSEngineImpl(client, submitPrivateKey)
 	hcs_engine := consensus.NewConsensusEngine(endpoint, impl)
 	hcs_engine.ShutdownOnSignal(syscall.SIGINT, syscall.SIGTERM)
 	hcs_engine.Start()

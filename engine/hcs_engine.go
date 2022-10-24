@@ -7,17 +7,19 @@ import (
 	"github.com/hyperledger/sawtooth-sdk-go/consensus"
 	"github.com/hyperledger/sawtooth-sdk-go/logging"
 	"github.com/taekion-org/sawtooth-hcs-consensus/structures"
+	"strconv"
 	"time"
 )
 
 var logger = logging.Get()
 
-const BLOCK_TIME_SECONDS = 20
 const TICK_TIME_SECONDS = 10
 
 type HCSEngineImpl struct {
-	topic  hedera.TopicID
-	client *hedera.Client
+	topic            hedera.TopicID
+	blockTime        time.Duration
+	client           *hedera.Client
+	submitPrivateKey hedera.PrivateKey
 
 	service       consensus.ConsensusService
 	startupState  consensus.StartupState
@@ -34,8 +36,8 @@ type HCSEngineImpl struct {
 	isBlockPending          bool
 }
 
-func NewHCSEngineImpl(topic hedera.TopicID, client *hedera.Client) *HCSEngineImpl {
-	return &HCSEngineImpl{topic: topic, client: client}
+func NewHCSEngineImpl(client *hedera.Client, submitPrivateKey hedera.PrivateKey) *HCSEngineImpl {
+	return &HCSEngineImpl{client: client, submitPrivateKey: submitPrivateKey}
 }
 
 func (self *HCSEngineImpl) Name() string {
@@ -53,11 +55,54 @@ func (self *HCSEngineImpl) Start(startupState consensus.StartupState, service co
 	self.startTime = time.Now()
 	self.updateChan = updateChan
 
+	// Set topic and block time from chain settings
+	settings, err := self.service.GetSettings(startupState.ChainHead().BlockId(), []string{"sawtooth.consensus.hcs.topic", "sawtooth.consensus.hcs.block_time"})
+	if err != nil {
+		panic(err)
+	}
+	self.topic, err = hedera.TopicIDFromString(settings["sawtooth.consensus.hcs.topic"])
+	if err != nil {
+		panic(err)
+	}
+	blockTime, err := strconv.Atoi(settings["sawtooth.consensus.hcs.block_time"])
+	if err != nil {
+		panic(err)
+	}
+	self.blockTime = time.Duration(blockTime)
+
+	logger.Infof("Using HCS topic ID %v", self.topic)
+
 	// Start state tracker
-	self.stateTracker = NewHCSStateTracker(self.topic, self.client)
+	self.stateTracker = NewHCSStateTracker(self.topic, self.blockTime, self.client)
 	self.stateTracker.Start()
 
 	logger.Info("HCS Engine Started...")
+
+	self.stateTracker.Lock()
+
+	// If HCS doesn't have the genesis block yet
+	if startupState.ChainHead().BlockNum() == 0 && !self.stateTracker.HasProposalState(0) {
+		msg := structures.HCSEngineTopicMessage{
+			Type:   structures.BLOCK_PROPOSAL,
+			PeerId: self.localPeerInfo.PeerId().String(),
+			BlockProposal: structures.HCSEngineBlockProposal{
+				PrevStateProof: "",
+				PrevBlockHash:  "",
+				BlockHash:      startupState.ChainHead().BlockId().String(),
+				BlockNumber:    0,
+			},
+		}
+		self.sendTopicMessage(msg)
+	}
+
+	for {
+		if !self.stateTracker.HasProposalState(0) {
+			self.stateTracker.GetProposalCondition(0).Wait()
+		} else {
+			break
+		}
+	}
+	self.stateTracker.Unlock()
 
 	go self.generateTicks()
 	go self.tickLoop()
@@ -79,11 +124,12 @@ func (self *HCSEngineImpl) updateLoop() {
 				self.handleBlockNew(notification.Block)
 			case consensus.UpdateBlockValid:
 				self.handleBlockValid(notification.BlockId)
+			case consensus.UpdateBlockInvalid:
+				self.handleBlockInvalid(notification.BlockId)
 			case consensus.UpdateBlockCommit:
 				self.handleBlockCommit(notification.BlockId)
-			case consensus.UpdateBlockInvalid:
 			default:
-				logger.Debug(notification)
+				logger.Debugf("Unhandled Notification: %v\n", notification)
 			}
 		}
 	}
@@ -114,6 +160,7 @@ func (self *HCSEngineImpl) sendTopicMessage(message structures.HCSEngineTopicMes
 	submitMessage, err := hedera.NewTopicMessageSubmitTransaction().
 		SetMessage(jsonMessage).
 		SetTopicID(self.topic).
+		Sign(self.submitPrivateKey).
 		Execute(self.client)
 
 	if err != nil {
@@ -200,7 +247,7 @@ func (self *HCSEngineImpl) tickLoop() {
 			maxIntent != nil &&
 			maxIntent.Intent.BlockNumber == self.currentIntentBlockNum &&
 			self.currentIntentBlockNum != self.currentProposalBlockNum &&
-			currentTime.After(maxIntent.Message.ConsensusTimestamp.Add(BLOCK_TIME_SECONDS*time.Second)) {
+			currentTime.After(maxIntent.Message.ConsensusTimestamp.Add(self.blockTime*time.Second)) {
 
 			// Try to summarize and finalize block.
 			// If we cannot (block is not ready), cancel the block (do not send a proposal).
@@ -269,6 +316,15 @@ func (self *HCSEngineImpl) waitForProposal(block consensus.Block) *HCSBlockPropo
 
 func (self *HCSEngineImpl) handleBlockNew(block consensus.Block) {
 	logger.Debugf("handleBlockNew: %s", block.BlockId())
+	self.service.CheckBlocks([]consensus.BlockId{block.BlockId()})
+}
+
+func (self *HCSEngineImpl) handleBlockValid(blockId consensus.BlockId) {
+	blocks, err := self.service.GetBlocks([]consensus.BlockId{blockId})
+	if err != nil {
+		panic(err)
+	}
+	block := blocks[blockId]
 
 	proposal := self.waitForProposal(block)
 	proposalBlockId := consensus.NewBlockIdFromString(proposal.Proposal.BlockHash)
@@ -276,17 +332,17 @@ func (self *HCSEngineImpl) handleBlockNew(block consensus.Block) {
 
 	if block.BlockId() == proposalBlockId {
 		logger.Debugf("Have consensus, checking block %d (%s)", block.BlockNum(), block.BlockId().String())
-		self.service.CheckBlocks([]consensus.BlockId{block.BlockId()})
+		self.service.CommitBlock(blockId)
 	} else {
 		logger.Debugf("No consensus, failing block %d (%s)", block.BlockNum(), block.BlockId().String())
-		self.service.FailBlock(block.BlockId())
+		self.service.FailBlock(blockId)
 	}
 }
 
-func (self *HCSEngineImpl) handleBlockValid(blockId consensus.BlockId) {
-	logger.Debugf("handleBlockValid: %s", blockId)
-	logger.Debugf("Committing: %s", blockId)
-	self.service.CommitBlock(blockId)
+func (self *HCSEngineImpl) handleBlockInvalid(blockId consensus.BlockId) {
+	logger.Debugf("handleBlockInvalid: %s", blockId)
+	logger.Debugf("Failing: %s", blockId)
+	self.service.FailBlock(blockId)
 }
 
 func (self *HCSEngineImpl) handleBlockCommit(blockId consensus.BlockId) {

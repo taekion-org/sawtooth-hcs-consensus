@@ -8,8 +8,16 @@ import (
 func main() {
 	client := GetClient()
 
+	privateKey, err := hedera.PrivateKeyGenerateEd25519()
+	if err != nil {
+		HandleError(err)
+	}
+
+	fmt.Println(privateKey)
+
 	//Create a new topic
 	transactionResponse, err := hedera.NewTopicCreateTransaction().
+		SetSubmitKey(privateKey.PublicKey()).
 		Execute(client)
 
 	if err != nil {

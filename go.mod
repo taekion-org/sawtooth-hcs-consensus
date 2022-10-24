@@ -2,7 +2,8 @@ module github.com/taekion-org/sawtooth-hcs-consensus
 
 go 1.16
 
-replace github.com/hyperledger/sawtooth-sdk-go v0.1.4 => github.com/taekion-org/sawtooth-sdk-go v0.1.6
+//replace github.com/hyperledger/sawtooth-sdk-go v0.1.4 => github.com/taekion-org/sawtooth-sdk-go v0.1.6
+replace github.com/hyperledger/sawtooth-sdk-go v0.1.4 => ../sawtooth-sdk-go
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.2.1 // indirect
