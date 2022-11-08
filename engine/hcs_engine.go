@@ -45,7 +45,7 @@ func (self *HCSEngineImpl) Name() string {
 }
 
 func (self *HCSEngineImpl) Version() string {
-	return "0.1"
+	return "0.2"
 }
 
 func (self *HCSEngineImpl) Start(startupState consensus.StartupState, service consensus.ConsensusService, updateChan chan consensus.ConsensusUpdate) error {
