@@ -168,17 +168,29 @@ func (self *HCSEngineImpl) sendTopicMessage(message structures.HCSEngineTopicMes
 	}
 
 	go func() {
-		// Get the receipt of the transaction
-		receipt, err := submitMessage.GetReceipt(self.client)
-		if err != nil {
-			panic(err)
-		}
+		for {
+			// Get the receipt of the transaction
+			receipt, err := submitMessage.GetReceipt(self.client)
+			if err != nil {
+				switch e := err.(type) {
+				case hedera.ErrHederaPreCheckStatus:
+					fmt.Printf("Receipt, ErrHederaPreCheckStatus: %v\n", e.Status)
+					panic(err)
+				case hedera.ErrHederaReceiptStatus:
+					fmt.Printf("Receipt, ErrHederaReceiptStatus: %v, Receipt Status: %v\n", e.Status, e.Receipt.Status)
+					panic(err)
+				default:
+					fmt.Println("Receipt: status=%v, transactionid=%v", receipt.Status, receipt.ScheduledTransactionID)
+					panic(err)
+				}
+			}
 
-		// Get the transaction status
-		// TODO: Figure out what to do if the result is not SUCCESS
-		transactionStatus := receipt.Status
-		if message.Type != structures.TIME_TICK {
-			logger.Debugf("Submitted %s, result %s", message.Type, transactionStatus.String())
+			// Get the transaction status
+			transactionStatus := receipt.Status
+			if message.Type != structures.TIME_TICK {
+				logger.Debugf("Submitted %s, result %s", message.Type, transactionStatus.String())
+			}
+			return
 		}
 	}()
 

@@ -70,6 +70,12 @@ func main() {
 	transactionStatus := receipt.Status
 	fmt.Println("The message transaction status " + transactionStatus.String())
 
+	//Get the receipt of the transaction
+	record, err := submitMessage.GetRecord(client)
+
+	//Get the transaction status
+	fmt.Printf("The message record transaction time %v", record.ConsensusTimestamp)
+
 	//Prevent the program from exiting to display the message from the mirror to the console
 	time.Sleep(30000)
 }
