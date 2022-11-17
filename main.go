@@ -2,10 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/hashgraph/hedera-sdk-go/v2"
 	"github.com/hyperledger/sawtooth-sdk-go/consensus"
 	"github.com/hyperledger/sawtooth-sdk-go/logging"
-	"github.com/jessevdk/go-flags"
 	"github.com/joho/godotenv"
 	"github.com/taekion-org/sawtooth-hcs-consensus/engine"
 	"os"
@@ -15,6 +13,7 @@ import (
 type Opts struct {
 	Verbose []bool `short:"v" long:"verbose" description:"Increase verbosity"`
 	Connect string `short:"C" long:"connect" description:"Validator consensus endpoint to connect to" default:"tcp://localhost:5050"`
+	EnvFile string `short:"E" long:"env" description:"Path to .env file" default:"engine.env"`
 }
 
 func main() {
@@ -51,7 +50,7 @@ func main() {
 
 	// Set up Hedera Connection
 	//Loads the .env file and throws an error if it cannot load the variables from that file correctly
-	err = godotenv.Load("engine.env")
+	err = godotenv.Load(opts.EnvFile)
 	if err != nil {
 		panic(fmt.Errorf("Unable to load environment variables from .env file. Error:\n%v\n", err))
 	}
