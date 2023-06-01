@@ -40,7 +40,7 @@ func main() {
 
 	newAccount, err := hedera.NewAccountCreateTransaction().
 		SetKey(newAccountPublicKey).
-		SetInitialBalance(hedera.HbarFrom(100, hedera.HbarUnits.Hbar)).
+		SetInitialBalance(hedera.HbarFrom(1000, hedera.HbarUnits.Hbar)).
 		Execute(client)
 
 	receipt, err = newAccount.GetReceipt(client)
@@ -58,6 +58,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	f.WriteString(fmt.Sprintf("TOPIC_ID=%v\n", topicID))
 	f.WriteString(fmt.Sprintf("ACCOUNT_ID=%v\n", newAccountId))
 	f.WriteString(fmt.Sprintf("ACCOUNT_PRIVATE_KEY=%v\n", newAccountPrivateKey.String()))
 	f.WriteString(fmt.Sprintf("SUBMIT_PRIVATE_KEY=%v\n", submitPrivateKey.String()))
