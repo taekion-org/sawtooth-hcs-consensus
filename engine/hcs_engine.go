@@ -80,6 +80,22 @@ func (self *HCSEngineImpl) Start(startupState consensus.StartupState, service co
 
 	self.stateTracker.Lock()
 
+	// Send a startup barrier and wait for it to sync
+	// Build the STARTUP_BARRIER message
+	msg := structures.HCSEngineTopicMessage{
+		Type:                structures.STARTUP_BARRIER,
+		StartupBarrierNonce: self.stateTracker.GetStartupBarrierNonce(),
+	}
+
+	// Send the message to the topic
+	self.sendTopicMessage(msg)
+
+	// Wait for the message to arrive from the topic
+	// Once this message arrives, we know we have received all previous messages from the topic
+	for !self.stateTracker.HasStartupBarrier() {
+		self.stateTracker.GetStartupBarrierCondition().Wait()
+	}
+
 	// If HCS doesn't have the genesis block yet
 	if startupState.ChainHead().BlockNum() == 0 && !self.stateTracker.HasProposalState(0) {
 		msg := structures.HCSEngineTopicMessage{

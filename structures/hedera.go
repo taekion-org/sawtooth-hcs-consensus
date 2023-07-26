@@ -5,12 +5,14 @@ type HCSEngineTopicMessageType string
 const BLOCK_INTENT HCSEngineTopicMessageType = "BLOCK_INTENT"
 const BLOCK_PROPOSAL HCSEngineTopicMessageType = "BLOCK_PROPOSAL"
 const TIME_TICK HCSEngineTopicMessageType = "TIME_TICK"
+const STARTUP_BARRIER HCSEngineTopicMessageType = "STARTUP_BARRIER"
 
 type HCSEngineTopicMessage struct {
-	Type          HCSEngineTopicMessageType `json:"type,omitempty"`
-	PeerId        string                    `json:"peer_id,omitempty"`
-	BlockIntent   HCSEngineBlockIntent      `json:"block_intent,omitempty"`
-	BlockProposal HCSEngineBlockProposal    `json:"block_proposal,omitempty"`
+	Type                HCSEngineTopicMessageType `json:"type,omitempty"`
+	PeerId              string                    `json:"peer_id,omitempty"`
+	BlockIntent         HCSEngineBlockIntent      `json:"block_intent,omitempty"`
+	BlockProposal       HCSEngineBlockProposal    `json:"block_proposal,omitempty"`
+	StartupBarrierNonce string                    `json:"startup_barrier_nonce,omitempty"`
 }
 
 type HCSEngineBlockIntent struct {

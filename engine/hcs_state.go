@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"github.com/hashgraph/hedera-sdk-go/v2"
@@ -32,6 +33,10 @@ type HCSStateTracker struct {
 
 	latestTime time.Time
 
+	startupBarrierNonce     string
+	startupBarrierState     bool
+	startupBarrierCondition *sync.Cond
+
 	mutex              sync.Mutex
 	timeCondition      *sync.Cond
 	intentConditions   map[uint64]*sync.Cond
@@ -39,19 +44,30 @@ type HCSStateTracker struct {
 }
 
 func NewHCSStateTracker(topic hedera.TopicID, blockTime time.Duration, client *hedera.Client) *HCSStateTracker {
+	// Generate a startup nonce
+	// This is used exactly once, at startup
+	startupNonceBytes := make([]byte, 16)
+	_, err := rand.Read(startupNonceBytes)
+	if err != nil {
+		panic(err)
+	}
+
 	return &HCSStateTracker{
-		topic:               topic,
-		blockTime:           blockTime,
-		client:              client,
-		intentState:         make(map[uint64]*HCSBlockIntentState),
-		proposalState:       make(map[uint64]*HCSBlockProposalState),
-		maxIntentBlockNum:   0,
-		maxProposalBlockNum: 0,
-		latestTime:          time.Time{},
-		mutex:               sync.Mutex{},
-		timeCondition:       nil,
-		intentConditions:    make(map[uint64]*sync.Cond),
-		proposalConditions:  make(map[uint64]*sync.Cond),
+		topic:                   topic,
+		blockTime:               blockTime,
+		client:                  client,
+		intentState:             make(map[uint64]*HCSBlockIntentState),
+		proposalState:           make(map[uint64]*HCSBlockProposalState),
+		maxIntentBlockNum:       0,
+		maxProposalBlockNum:     0,
+		latestTime:              time.Time{},
+		startupBarrierNonce:     fmt.Sprintf("%x", startupNonceBytes),
+		startupBarrierState:     false,
+		startupBarrierCondition: nil,
+		mutex:                   sync.Mutex{},
+		timeCondition:           nil,
+		intentConditions:        make(map[uint64]*sync.Cond),
+		proposalConditions:      make(map[uint64]*sync.Cond),
 	}
 }
 
@@ -177,6 +193,16 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 				return
 			}
 		}
+	case structures.STARTUP_BARRIER:
+		expectedNonce := self.GetStartupBarrierNonce()
+		debugMsg(fmt.Sprintf("STARTUP_BARRIER: Looking for message with nonce: %s", expectedNonce))
+		if decodedMessage.StartupBarrierNonce == expectedNonce {
+			debugMsg(fmt.Sprintf("STARTUP_BARRIER: Saw message with expected nonce %s", expectedNonce))
+			self.startupBarrierState = true
+			self.GetStartupBarrierCondition().Signal()
+		} else {
+			debugMsg(fmt.Sprintf("STARTUP_BARRIER: Saw message with unexpected nonce %s", decodedMessage.StartupBarrierNonce))
+		}
 	}
 }
 
@@ -185,6 +211,13 @@ func (self *HCSStateTracker) GetTimeCondition() *sync.Cond {
 		self.timeCondition = sync.NewCond(&self.mutex)
 	}
 	return self.timeCondition
+}
+
+func (self *HCSStateTracker) GetStartupBarrierCondition() *sync.Cond {
+	if self.startupBarrierCondition == nil {
+		self.startupBarrierCondition = sync.NewCond(&self.mutex)
+	}
+	return self.startupBarrierCondition
 }
 
 func (self *HCSStateTracker) GetIntentCondition(blockNumber uint64) *sync.Cond {
@@ -205,6 +238,10 @@ func (self *HCSStateTracker) GetLatestTime() time.Time {
 	return self.latestTime
 }
 
+func (self *HCSStateTracker) GetStartupBarrierNonce() string {
+	return self.startupBarrierNonce
+}
+
 func (self *HCSStateTracker) GetIntentState(blockNumber uint64) (*HCSBlockIntentState, error) {
 	if !self.HasIntentState(blockNumber) {
 		return nil, fmt.Errorf("Intent for block number %d not found in state", blockNumber)
@@ -217,6 +254,10 @@ func (self *HCSStateTracker) GetProposalState(blockNumber uint64) (*HCSBlockProp
 		return nil, fmt.Errorf("Proposal for block number %d not found in state", blockNumber)
 	}
 	return self.proposalState[blockNumber], nil
+}
+
+func (self *HCSStateTracker) HasStartupBarrier() bool {
+	return self.startupBarrierState
 }
 
 func (self *HCSStateTracker) HasIntentState(blockNumber uint64) bool {
