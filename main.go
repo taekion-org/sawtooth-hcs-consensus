@@ -73,9 +73,13 @@ func main() {
 		panic(err)
 	}
 
+	logger.Info("Connecting to Hedera network...")
+
 	//Create your testnet client
 	client := hedera.ClientForTestnet()
 	client.SetOperator(accountId, accountPrivateKey)
+
+	logger.Info("Hedera network connection ready...")
 
 	impl := engine.NewHCSEngineImpl(client, submitPrivateKey)
 	hcs_engine := consensus.NewConsensusEngine(endpoint, impl)
