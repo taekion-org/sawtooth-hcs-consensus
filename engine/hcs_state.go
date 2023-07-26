@@ -158,7 +158,7 @@ func (self *HCSStateTracker) handleTopicMessage(message hedera.TopicMessage) {
 		debugMsg(fmt.Sprintf("BLOCK: %d HASH: %s", proposal.BlockNumber, proposal.BlockHash))
 
 		// Special case for genesis block.
-		if message.SequenceNumber == 1 && proposal.BlockNumber == 0 {
+		if proposal.BlockNumber == 0 && !self.HasProposalState(0) {
 			self.proposalState[proposal.BlockNumber] = &HCSBlockProposalState{
 				Message:  &message,
 				Proposal: &proposal,
