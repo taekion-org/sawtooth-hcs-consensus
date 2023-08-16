@@ -3,7 +3,7 @@
 ## Introduction
 This project (`sawtooth-hcs-consensus`) is a pluggable consensus engine for Hyperledger Sawtooth
 that utilizes the Hedera Consensus Service (HCS) to provide publicly verifiable, Byzantine
-Fault Tolerant consensus to Sawtooth-based blockchains.
+Fault Tolerant consensus to Sawtooth-based blockchains.  This plugin replaces the standard permissioned PBFT, POeT and Raftinterfaces using the the Sawtooth pluggable consensus.
 
 ## Requirements
 This consensus engine requires the Sawtooth nodes to have a reliable connection to the public Internet
