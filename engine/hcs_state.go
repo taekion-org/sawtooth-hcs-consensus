@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/hashgraph/hedera-sdk-go/v2"
 	"github.com/taekion-org/sawtooth-hcs-consensus/structures"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"sync"
 	"time"
 )
@@ -72,8 +74,21 @@ func NewHCSStateTracker(topic hedera.TopicID, blockTime time.Duration, client *h
 }
 
 func (self *HCSStateTracker) Start() error {
+	retryHandler := func(err error) bool {
+		switch status.Code(err) {
+		case codes.Internal:
+			logger.Info("HCS Subscription Internal Error, delaying for 10s")
+			time.Sleep(10 * time.Second)
+			return true
+		default:
+			return true
+		}
+	}
+
 	_, err := hedera.NewTopicMessageQuery().
 		SetTopicID(self.topic).
+		SetMaxAttempts(10000).
+		SetRetryHandler(retryHandler).
 		Subscribe(self.client,
 			func(message hedera.TopicMessage) {
 				self.handleTopicMessage(message)

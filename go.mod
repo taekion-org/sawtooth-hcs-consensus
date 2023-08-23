@@ -13,4 +13,5 @@ require (
 	github.com/jessevdk/go-flags v1.5.0
 	github.com/joho/godotenv v1.5.1
 	github.com/taekion-org/sawtooth-client-sdk-go v0.1.1
+	google.golang.org/grpc v1.57.0
 )
