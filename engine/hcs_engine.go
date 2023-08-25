@@ -109,15 +109,12 @@ func (self *HCSEngineImpl) Start(startupState consensus.StartupState, service co
 			},
 		}
 		self.sendTopicMessage(msg)
-	}
 
-	for {
-		if !self.stateTracker.HasProposalState(0) {
+		for !self.stateTracker.HasProposalState(0) {
 			self.stateTracker.GetProposalCondition(0).Wait()
-		} else {
-			break
 		}
 	}
+
 	self.stateTracker.Unlock()
 
 	go self.generateTicks()
