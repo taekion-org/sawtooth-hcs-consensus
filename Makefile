@@ -13,5 +13,8 @@ util:
 docker:
 	docker buildx build --push --platform linux/amd64,linux/arm64 --tag taekion/sawtooth-hcs-consensus -f docker/Dockerfile ..
 
+docker-testing:
+	docker buildx build --push --platform linux/amd64,linux/arm64 --tag taekion/sawtooth-hcs-consensus:testing -f docker/Dockerfile ..
+
 clean:
 	rm -rfv build/*
