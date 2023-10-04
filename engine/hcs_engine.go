@@ -20,6 +20,7 @@ type HCSEngineImpl struct {
 	blockTime        time.Duration
 	client           *hedera.Client
 	submitPrivateKey hedera.PrivateKey
+	dbDsn            string
 
 	service       consensus.ConsensusService
 	startupState  consensus.StartupState
@@ -36,8 +37,8 @@ type HCSEngineImpl struct {
 	isBlockPending          bool
 }
 
-func NewHCSEngineImpl(client *hedera.Client, submitPrivateKey hedera.PrivateKey) *HCSEngineImpl {
-	return &HCSEngineImpl{client: client, submitPrivateKey: submitPrivateKey}
+func NewHCSEngineImpl(client *hedera.Client, submitPrivateKey hedera.PrivateKey, dbDsn string) *HCSEngineImpl {
+	return &HCSEngineImpl{client: client, submitPrivateKey: submitPrivateKey, dbDsn: dbDsn}
 }
 
 func (self *HCSEngineImpl) Name() string {
@@ -73,7 +74,7 @@ func (self *HCSEngineImpl) Start(startupState consensus.StartupState, service co
 	logger.Infof("Using HCS topic ID %v", self.topic)
 
 	// Start state tracker
-	self.stateTracker = NewHCSStateTracker(self.topic, self.blockTime, self.client)
+	self.stateTracker = NewHCSStateTracker(self.topic, self.blockTime, self.client, self.dbDsn)
 	self.stateTracker.Start()
 
 	logger.Info("HCS Engine Started...")
