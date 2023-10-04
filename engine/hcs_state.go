@@ -8,9 +8,16 @@ import (
 	"github.com/taekion-org/sawtooth-hcs-consensus/structures"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 	"sync"
 	"time"
 )
+
+type HCSTopicMessageWrapper struct {
+	SequenceNumber uint64               `gorm:"primaryKey"`
+	TopicMessage   *hedera.TopicMessage `gorm:"serializer:json"`
+}
 
 type HCSBlockIntentState struct {
 	Message *hedera.TopicMessage
@@ -43,9 +50,12 @@ type HCSStateTracker struct {
 	timeCondition      *sync.Cond
 	intentConditions   map[uint64]*sync.Cond
 	proposalConditions map[uint64]*sync.Cond
+
+	db    *gorm.DB
+	dbDsn string
 }
 
-func NewHCSStateTracker(topic hedera.TopicID, blockTime time.Duration, client *hedera.Client) *HCSStateTracker {
+func NewHCSStateTracker(topic hedera.TopicID, blockTime time.Duration, client *hedera.Client, dbDsn string) *HCSStateTracker {
 	// Generate a startup nonce
 	// This is used exactly once, at startup
 	startupNonceBytes := make([]byte, 16)
@@ -70,10 +80,23 @@ func NewHCSStateTracker(topic hedera.TopicID, blockTime time.Duration, client *h
 		timeCondition:           nil,
 		intentConditions:        make(map[uint64]*sync.Cond),
 		proposalConditions:      make(map[uint64]*sync.Cond),
+		db:                      nil,
+		dbDsn:                   dbDsn,
 	}
 }
 
 func (self *HCSStateTracker) Start() error {
+	// Create a database connection to sqlite
+	db, err := gorm.Open(sqlite.Open(self.dbDsn), &gorm.Config{})
+	if err != nil {
+		panic(err)
+	}
+	err = db.AutoMigrate(&HCSTopicMessageWrapper{})
+	if err != nil {
+		panic(err)
+	}
+	self.db = db
+
 	retryHandler := func(err error) bool {
 		switch status.Code(err) {
 		case codes.Internal:
@@ -85,14 +108,43 @@ func (self *HCSStateTracker) Start() error {
 		}
 	}
 
-	_, err := hedera.NewTopicMessageQuery().
+	// Load cached messages
+	var cachedMessages []HCSTopicMessageWrapper
+	result := db.Order("sequence_number").Find(&cachedMessages)
+	if result.Error != nil {
+		panic(result.Error)
+	}
+
+	// Send the cached messages through the topic message handler
+	for _, wrapper := range cachedMessages {
+		self.handleTopicMessage(*wrapper.TopicMessage)
+	}
+
+	// Set up the HCS query
+	query := hedera.NewTopicMessageQuery().
 		SetTopicID(self.topic).
 		SetMaxAttempts(10000).
-		SetRetryHandler(retryHandler).
-		Subscribe(self.client,
-			func(message hedera.TopicMessage) {
-				self.handleTopicMessage(message)
-			})
+		SetRetryHandler(retryHandler)
+
+	// If we had cached messages, start the query one nanosecond after the last cached message
+	if len(cachedMessages) > 0 {
+		msg := cachedMessages[len(cachedMessages)-1]
+		query = query.SetStartTime(msg.TopicMessage.ConsensusTimestamp.Add(time.Nanosecond))
+	}
+
+	// Start the subscription from the query
+	_, err = query.Subscribe(self.client,
+		func(message hedera.TopicMessage) {
+			// Add the message to the local db (cache)
+			wrapper := &HCSTopicMessageWrapper{
+				SequenceNumber: message.SequenceNumber,
+				TopicMessage:   &message,
+			}
+			self.db.Create(wrapper)
+
+			// Pass the message to the topic message handler
+			self.handleTopicMessage(message)
+		})
 	if err != nil {
 		return err
 	}
