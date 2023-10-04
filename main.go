@@ -16,6 +16,7 @@ type Opts struct {
 	Verbose []bool `short:"v" long:"verbose" description:"Increase verbosity"`
 	Connect string `short:"C" long:"connect" description:"Validator consensus endpoint to connect to" default:"tcp://localhost:5050"`
 	EnvFile string `short:"E" long:"env" description:"Path to .env file" default:"engine.env"`
+	DbDsn   string `short:"D" long:"db" description:"Database (sqlite) DSN" default:"hcs.sqlite"`
 }
 
 func main() {
@@ -81,7 +82,7 @@ func main() {
 
 	logger.Info("Hedera network connection ready...")
 
-	impl := engine.NewHCSEngineImpl(client, submitPrivateKey)
+	impl := engine.NewHCSEngineImpl(client, submitPrivateKey, opts.DbDsn)
 	hcs_engine := consensus.NewConsensusEngine(endpoint, impl)
 	hcs_engine.ShutdownOnSignal(syscall.SIGINT, syscall.SIGTERM)
 	hcs_engine.Start()
