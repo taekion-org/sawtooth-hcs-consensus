@@ -14,4 +14,6 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/taekion-org/sawtooth-client-sdk-go v0.1.1
 	google.golang.org/grpc v1.58.2
+	gorm.io/driver/sqlite v1.5.3
+	gorm.io/gorm v1.25.4
 )
