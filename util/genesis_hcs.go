@@ -43,7 +43,7 @@ func main() {
 
 	newAccount, err := hedera.NewAccountCreateTransaction().
 		SetKey(newAccountPublicKey).
-		SetInitialBalance(hedera.HbarFrom(1000, hedera.HbarUnits.Hbar)).
+		SetInitialBalance(hedera.HbarFrom(500, hedera.HbarUnits.Hbar)).
 		Execute(client)
 
 	receipt, err = newAccount.GetReceipt(client)
