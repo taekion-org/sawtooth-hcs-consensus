@@ -58,7 +58,9 @@ func main() {
 		panic(fmt.Errorf("Unable to load environment variables from .env file. Error:\n%v\n", err))
 	}
 
-	//Grab your testnet account ID and private key from the .env file
+	// Load the configuration (network, account ID and private key) from the .env file
+	network := os.Getenv("NETWORK")
+
 	accountId, err := hedera.AccountIDFromString(os.Getenv("ACCOUNT_ID"))
 	if err != nil {
 		panic(err)
@@ -77,10 +79,19 @@ func main() {
 	logger.Info("Connecting to Hedera network...")
 
 	//Create your testnet client
-	client := hedera.ClientForTestnet()
+	var client *hedera.Client
+	switch network {
+	case "testnet":
+		client = hedera.ClientForTestnet()
+	case "mainnet":
+		client = hedera.ClientForMainnet()
+	default:
+		panic("Unspecified or unsupported Hedera network")
+	}
 	client.SetOperator(accountId, accountPrivateKey)
 
-	logger.Info("Hedera network connection ready...")
+	logger.Infof("Hedera network connection is ready (%s)", network)
+	logger.Infof("Hedera Account ID is %s", accountId)
 
 	impl := engine.NewHCSEngineImpl(client, submitPrivateKey, opts.DbDsn)
 	hcs_engine := consensus.NewConsensusEngine(endpoint, impl)
