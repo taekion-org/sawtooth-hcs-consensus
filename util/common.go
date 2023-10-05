@@ -8,13 +8,20 @@ import (
 )
 
 func GetClient() *hedera.Client {
-	//Loads the .env file and throws an error if it cannot load the variables from that file correctly
-	err := godotenv.Load(".env")
+	// Loads the .env file and throws an error if it cannot load the variables from that file correctly
+	var err error
+	envFile, ok := os.LookupEnv("ENV")
+	if ok {
+		err = godotenv.Load(envFile)
+	} else {
+		err = godotenv.Load(".env")
+	}
 	if err != nil {
-		panic(fmt.Errorf("Unable to load environment variables from .env file. Error:\n%v\n", err))
+		panic(fmt.Errorf("Unable to load environment variables from .env file (%s). Error:\n%v\n", envFile, err))
 	}
 
-	//Grab your testnet account ID and private key from the .env file
+	network := os.Getenv("NETWORK")
+
 	myAccountId, err := hedera.AccountIDFromString(os.Getenv("ACCOUNT_ID"))
 	if err != nil {
 		panic(err)
@@ -25,8 +32,16 @@ func GetClient() *hedera.Client {
 		panic(err)
 	}
 
-	//Create your testnet client
-	client := hedera.ClientForTestnet()
+	var client *hedera.Client
+	switch network {
+	case "testnet":
+		client = hedera.ClientForTestnet()
+	case "mainnet":
+		client = hedera.ClientForMainnet()
+	default:
+		panic("Unspecified or unsupported Hedera network")
+	}
+
 	client.SetOperator(myAccountId, myPrivateKey)
 
 	return client

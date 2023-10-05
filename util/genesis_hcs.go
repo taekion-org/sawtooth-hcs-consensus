@@ -9,6 +9,9 @@ import (
 func main() {
 	client := GetClient()
 
+	// Get the configured network from the environment.
+	network := os.Getenv("NETWORK")
+
 	// Generate a new keypair for the validators to use to publish messages.
 	submitPrivateKey, err := hedera.PrivateKeyGenerateEd25519()
 	if err != nil {
@@ -49,6 +52,7 @@ func main() {
 	}
 	newAccountId := *receipt.AccountID
 
+	fmt.Printf("network: %s\n", network)
 	fmt.Printf("topicID: %v\n", topicID)
 	fmt.Printf("submitPrivateKey: %v\n", submitPrivateKey.String())
 	fmt.Printf("accountID: %v\n", newAccountId)
@@ -58,6 +62,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	f.WriteString(fmt.Sprintf("NETWORK=%v\n", network))
 	f.WriteString(fmt.Sprintf("TOPIC_ID=%v\n", topicID))
 	f.WriteString(fmt.Sprintf("ACCOUNT_ID=%v\n", newAccountId))
 	f.WriteString(fmt.Sprintf("ACCOUNT_PRIVATE_KEY=%v\n", newAccountPrivateKey.String()))
